@@ -68,7 +68,7 @@ const uint8_t modbusMasterDefaultFunctionCount = sizeof(modbusMasterDefaultFunct
 	\param dataCallback Callback function for handling incoming data (may be required by used parsing functions)
 	\param exceptionCallback Callback function for handling slave exceptions (optional)
 	\param allocator Memory allocator to be used (see \ref modbusDefaultAllocator()) (required)
-	\param functions Pointer to an array of supported function handlers (required). 
+	\param functions Pointer to an array of supported function handlers (required).
 		The lifetime of this array must not be shorter than the lifetime of the master.
 	\param functionCount Number of elements in the `functions` array (required)
 	\returns MODBUS_NO_ERROR() on success
@@ -144,7 +144,7 @@ LIGHTMODBUS_RET_ERROR modbusEndRequestRTU(ModbusMaster *status, uint8_t address)
 		&status->request.data[0],
 		status->request.length,
 		address);
-	
+
 	if (err != MODBUS_OK)
 		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_GENERAL, err);
 
@@ -165,7 +165,7 @@ LIGHTMODBUS_RET_ERROR modbusBeginRequestTCP(ModbusMaster *status)
 	\brief Finalizes a Modbus TCP request
 	\param transactionID Modbus TCP transaction identifier
 	\param unitID Modbus TCP Unit ID
-	\returns MODBUS_GENERAL_ERROR(LENGTH) if the allocated frame has invalid length 
+	\returns MODBUS_GENERAL_ERROR(LENGTH) if the allocated frame has invalid length
 	\returns MODBUS_NO_ERROR() on success
 */
 LIGHTMODBUS_RET_ERROR modbusEndRequestTCP(ModbusMaster *status, uint16_t transactionID, uint8_t unitID)
@@ -208,7 +208,7 @@ LIGHTMODBUS_RET_ERROR modbusParseResponsePDU(
 		return MODBUS_REQUEST_ERROR(LENGTH);
 	if (!responseLength || responseLength > MODBUS_PDU_MAX)
 		return MODBUS_RESPONSE_ERROR(LENGTH);
-	
+
 	uint8_t function = response[0];
 
 	// Handle exception frames
@@ -265,9 +265,9 @@ LIGHTMODBUS_RET_ERROR modbusParseResponseRTU(
 	uint16_t responseLength)
 {
 	// Unpack request
-	const uint8_t *requestPDU;
-	uint16_t requestPDULength;
-	uint8_t requestAddress;
+	const uint8_t *requestPDU = NULL;
+	uint16_t requestPDULength = 0;
+	uint8_t requestAddress    = 0;
 	ModbusError err = modbusUnpackRTU(
 		request,
 		requestLength,
@@ -294,7 +294,7 @@ LIGHTMODBUS_RET_ERROR modbusParseResponseRTU(
 		&responsePDU,
 		&responsePDULength,
 		&responseAddress);
-	
+
 	if (err != MODBUS_OK)
 		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_RESPONSE, err);
 
@@ -361,7 +361,7 @@ LIGHTMODBUS_RET_ERROR modbusParseResponseTCP(
 		&responsePDULength,
 		&responseTransactionID,
 		&responseUnitID);
-	
+
 	if (err != MODBUS_OK)
 		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_RESPONSE, err);
 

@@ -111,7 +111,7 @@ void modbusSlaveDestroy(ModbusSlave *status)
 		response frame is going to be discarded (when the request was broadcast).
 
 	\warning This function expects ModbusSlave::response::pduOffset and
-	ModbusSlave::response::padding to be set properly! If you're looking for a 
+	ModbusSlave::response::padding to be set properly! If you're looking for a
 	function to manually build an exception please use modbusBuildExceptionPDU(),
 	modbusBuildExceptionRTU() or modbusBuildExceptionTCP()
 */
@@ -147,7 +147,7 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionPDU(
 {
 	status->response.pduOffset = 0;
 	status->response.padding = 0;
-	
+
 	ModbusErrorInfo err = modbusBuildException(status, function, code);
 	if (!modbusIsOk(err))
 		return err;
@@ -176,9 +176,9 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionRTU(
 
 	status->response.pduOffset = MODBUS_RTU_PDU_OFFSET;
 	status->response.padding = MODBUS_RTU_ADU_PADDING;
-	
+
 	ModbusErrorInfo errinfo = modbusBuildException(status, function, code);
-	
+
 	if (!modbusIsOk(errinfo))
 		return errinfo;
 
@@ -186,7 +186,7 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionRTU(
 		&status->response.data[0],
 		status->response.length,
 		address);
-		
+
 	// There's literally no reason for modbusPackRTU()
 	// to return MODBUS_ERROR_LENGTH here
 	(void) err;
@@ -196,7 +196,7 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionRTU(
 
 /**
 	\brief Builds a Modbus TCP exception
-	\param transactionID transaction ID 
+	\param transactionID transaction ID
 	\param unitID unit ID to be reported in the exception
 	\param function function that reported the exception
 	\param code Modbus exception code
@@ -213,9 +213,9 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionTCP(
 {
 	status->response.pduOffset = MODBUS_TCP_PDU_OFFSET;
 	status->response.padding = MODBUS_TCP_ADU_PADDING;
-	
+
 	ModbusErrorInfo errinfo = modbusBuildException(status, function, code);
-	
+
 	if (!modbusIsOk(errinfo))
 		return errinfo;
 
@@ -240,10 +240,10 @@ LIGHTMODBUS_RET_ERROR modbusBuildExceptionTCP(
 	\returns Any errors from parsing functions
 
 	\warning This function expects ModbusSlave::response::pduOffset and
-	ModbusSlave::response::padding to be set properly! If you're looking for a 
+	ModbusSlave::response::padding to be set properly! If you're looking for a
 	function to parse PDU and generate a PDU response, please use modbusParseRequestPDU() instead.
 
-	\warning The response frame can only be accessed if modbusIsOk() called 
+	\warning The response frame can only be accessed if modbusIsOk() called
 		on the return value of this function evaluates to true.
 */
 LIGHTMODBUS_RET_ERROR modbusParseRequest(ModbusSlave *status, const uint8_t *request, uint8_t requestLength)
@@ -266,7 +266,7 @@ LIGHTMODBUS_RET_ERROR modbusParseRequest(ModbusSlave *status, const uint8_t *req
 	\returns MODBUS_REQUEST_ERROR(LENGTH) if length of the frame is invalid
 	\returns Any errors from parsing functions
 
-	\warning The response frame can only be accessed if modbusIsOk() called 
+	\warning The response frame can only be accessed if modbusIsOk() called
 		on the return value from this function evaluates to true.
 
 	\warning The `requestLength` argument is  of type `uint8_t` and not `uint16_t`
@@ -293,15 +293,15 @@ LIGHTMODBUS_RET_ERROR modbusParseRequestPDU(ModbusSlave *status, const uint8_t *
 	\returns MODBUS_GENERAL_ERROR(LENGTH) if the resulting response frame has invalid length
 	\returns Any errors from parsing functions
 
-	\warning The response frame can only be accessed if modbusIsOk() called 
+	\warning The response frame can only be accessed if modbusIsOk() called
 		on the return value of this function evaluates to true.
 */
 LIGHTMODBUS_RET_ERROR modbusParseRequestRTU(ModbusSlave *status, uint8_t slaveAddress, const uint8_t *request, uint16_t requestLength)
 {
 	// Unpack the request
-	const uint8_t *pdu;
-	uint16_t pduLength;
-	uint8_t requestAddress;
+	const uint8_t *pdu     = NULL;
+	uint16_t pduLength     = 0;
+	uint8_t requestAddress = 0;
 	ModbusError err = modbusUnpackRTU(
 		request,
 		requestLength,
@@ -323,7 +323,7 @@ LIGHTMODBUS_RET_ERROR modbusParseRequestRTU(ModbusSlave *status, uint8_t slaveAd
 	modbusBufferModeRTU(&status->response);
 	if (!modbusIsOk(errinfo = modbusParseRequest(status, pdu, pduLength)))
 		return errinfo;
-	
+
 	if (status->response.length)
 	{
 		// Discard any response frames if the request
@@ -343,7 +343,7 @@ LIGHTMODBUS_RET_ERROR modbusParseRequestRTU(ModbusSlave *status, uint8_t slaveAd
 		if (err != MODBUS_OK)
 			return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_GENERAL, err);
 	}
-	
+
 	return MODBUS_NO_ERROR();
 }
 
@@ -356,7 +356,7 @@ LIGHTMODBUS_RET_ERROR modbusParseRequestRTU(ModbusSlave *status, uint8_t slaveAd
 	\returns MODBUS_GENERAL_ERROR(LENGTH) if the resulting response frame has invalid length
 	\returns Any errors from parsing functions
 
-	\warning The response frame can only be accessed if modbusIsOk() called 
+	\warning The response frame can only be accessed if modbusIsOk() called
 		on the return value of this function evaluates to true.
 */
 LIGHTMODBUS_RET_ERROR modbusParseRequestTCP(ModbusSlave *status, const uint8_t *request, uint16_t requestLength)
@@ -377,7 +377,7 @@ LIGHTMODBUS_RET_ERROR modbusParseRequestTCP(ModbusSlave *status, const uint8_t *
 
 	if (err != MODBUS_OK)
 		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_REQUEST, err);
-	
+
 	// Parse the request
 	ModbusErrorInfo errinfo;
 	modbusBufferModeTCP(&status->response);
