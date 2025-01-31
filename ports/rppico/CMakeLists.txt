@@ -1,0 +1,53 @@
+# LIGHTMODBUS
+add_library(LIGHTMODBUS INTERFACE)
+target_include_directories(LIGHTMODBUS INTERFACE
+	${LIGHTMODBUS_DIR}/include/lightmodbus
+)
+
+# LIGHTMODBUS_PORT
+add_library(LIGHTMODBUS_PORT STATIC)
+target_sources(LIGHTMODBUS_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/src/modbus_port.c
+)
+target_include_directories(LIGHTMODBUS_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/inc
+)
+target_link_libraries(LIGHTMODBUS_PORT PUBLIC
+	LIGHTMODBUS
+)
+
+# LIGHTMODBUS_RTU_PORT
+add_library(LIGHTMODBUS_RTU_PORT STATIC)
+target_sources(LIGHTMODBUS_RTU_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/src/rtu_port.c
+)
+target_include_directories(LIGHTMODBUS_RTU_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/inc
+)
+target_link_libraries(LIGHTMODBUS_RTU_PORT PRIVATE
+	pico_stdlib
+	FREERTOS_PORT
+)
+target_link_libraries(LIGHTMODBUS_RTU_PORT PUBLIC
+	LIGHTMODBUS_PORT
+)
+
+# LIGHTMODBUS_TCP_PORT
+add_library(LIGHTMODBUS_TCP_PORT STATIC)
+target_sources(LIGHTMODBUS_TCP_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/src/tcp_port.c
+)
+target_include_directories(LIGHTMODBUS_TCP_PORT PUBLIC
+	${LIGHTMODBUS_PORT_DIR}/inc
+)
+target_link_libraries(LIGHTMODBUS_TCP_PORT PRIVATE
+	pico_stdlib
+	FREERTOS_PORT
+	WIZNET_PORT
+	ETHERNET_FILES
+	hardware_spi
+	hardware_dma
+)
+target_link_libraries(LIGHTMODBUS_TCP_PORT PUBLIC
+	LIGHTMODBUS_PORT
+)
