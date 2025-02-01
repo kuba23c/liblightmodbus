@@ -10,7 +10,6 @@
 #include <stdbool.h>
 
 #define STATIC_BUFFER_SIZE 256
-#define MODBUS_RESPONSE_REGISTER_MAX	125
 
 typedef void (*modbus_error_handler)(const char *const error_string);
 
