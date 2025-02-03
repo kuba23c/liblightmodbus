@@ -1,10 +1,18 @@
+/**
+ * file: modbus_port.c
+ * Author: kuba23c
+ * Description: Lightmodbus static allocator port
+ */
+
 #include "modbus_port.h"
 #define LIGHTMODBUS_IMPL
 #include "lightmodbus.h"
 
 #include <string.h>
+#include "modbus_callbacks.h"
 
-static ModbusError modbusStaticAllocator(ModbusBuffer *buffer, uint16_t size, void *context) {
+static ModbusError modbusStaticAllocator(ModbusBuffer *buffer, uint16_t size,
+		void *context) {
 	if (context == NULL) {
 		buffer->data = NULL;
 		return (MODBUS_ERROR_ALLOC);
@@ -25,13 +33,12 @@ static ModbusError modbusStaticAllocator(ModbusBuffer *buffer, uint16_t size, vo
 	}
 }
 
-bool modbus_port_init(modbus_t *const modbus, ModbusRegisterCallback registerCallback, ModbusSlaveExceptionCallback exceptionCallback, modbus_error_handler error_handler) {
-	modbus->error_handler = error_handler;
-	modbus->err = modbusSlaveInit(&(modbus->slave), registerCallback, exceptionCallback, modbusStaticAllocator, modbusSlaveDefaultFunctions, modbusSlaveDefaultFunctionCount);
+bool modbus_port_init(modbus_t *const modbus) {
+	modbus->err = modbusSlaveInit(&(modbus->slave), modbus_register_callback,
+			modbus_exception_callback, modbusStaticAllocator,
+			modbusSlaveDefaultFunctions, modbusSlaveDefaultFunctionCount);
 	if (!(modbusIsOk(modbus->err))) {
-		if (modbus->error_handler != NULL) {
-			modbus->error_handler("Modbus slave init error.");
-		}
+		modbus_error_callback("Modbus slave init error.");
 		return (true);
 	}
 	modbusSlaveSetUserPointer(&(modbus->slave), &(modbus->buffer));

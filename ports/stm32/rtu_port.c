@@ -1,4 +1,11 @@
+/**
+ * file: rtu_port.c
+ * Author: kuba23c
+ * Description: Lightmodbus RTU port for STM32 + CMSIS RTOSv2 + FreeRTOS
+ */
+
 #include "rtu_port.h"
+#include "modbus_callbacks.h"
 
 #define MODBUS_MAX_WAIT 500 // 500ms
 #define MODBUS_DIRECTION_RX GPIO_PIN_RESET
@@ -35,8 +42,7 @@ typedef struct {
 } modbus_rtu_timers_t;
 
 typedef enum {
-	MODBUS_RTU_READ_READY = 0x01,
-	MODBUS_RTU_EMIT_READY = 0x02,
+	MODBUS_RTU_READ_READY = 0x01, MODBUS_RTU_EMIT_READY = 0x02,
 } modbus_rtu_events_t;
 
 typedef enum {
@@ -65,10 +71,7 @@ typedef struct {
 } modbus_rtu_t;
 
 typedef enum {
-	MODBUS_IRQ_ALL_OFF,
-	MODBUS_IRQ_RX_ON,
-	MODBUS_IRQ_TX_ON,
-	MODBUS_IRQ_MAX
+	MODBUS_IRQ_ALL_OFF, MODBUS_IRQ_RX_ON, MODBUS_IRQ_TX_ON, MODBUS_IRQ_MAX
 } modbus_irq_t;
 
 typedef enum {
@@ -88,13 +91,18 @@ static volatile uint32_t uart_isr_status = 0;
 static volatile modbus_irq_t current_irq_state = MODBUS_IRQ_ALL_OFF;
 
 static bool notify_wait(void) {
-	modbus_rtu.events = osThreadFlagsWait(MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY, osFlagsWaitAny, modbus_rtu.poll_timeout);
+	modbus_rtu.events = osThreadFlagsWait(
+			MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY, osFlagsWaitAny,
+			modbus_rtu.poll_timeout);
 
-	if(modbus_rtu.events == (uint32_t)osErrorTimeout){
+	if (modbus_rtu.events == (uint32_t) osErrorTimeout) {
 		modbus_rtu.events = 0;
 		return (true);
 	}
-	if (modbus_rtu.events == MODBUS_RTU_READ_READY || modbus_rtu.events == MODBUS_RTU_EMIT_READY || modbus_rtu.events == (MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY)) {
+	if (modbus_rtu.events == MODBUS_RTU_READ_READY
+			|| modbus_rtu.events == MODBUS_RTU_EMIT_READY
+			|| modbus_rtu.events
+					== (MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY)) {
 		return (false);
 	}
 	modbus_rtu.events = 0;
@@ -150,7 +158,8 @@ static void wait_while_uart_busy(void) {
 
 static void send_byte(void) {
 	modbus_rtu.send_cnt++;
-	modbus_rtu.uart.uart->Instance->TDR = (uint32_t) (modbus_rtu.send_buffer[modbus_rtu.send_cnt - 1]);
+	modbus_rtu.uart.uart->Instance->TDR =
+			(uint32_t) (modbus_rtu.send_buffer[modbus_rtu.send_cnt - 1]);
 }
 
 static void modbus_rtu_uart_irq_set(modbus_irq_t irq_state) {
@@ -166,8 +175,10 @@ static void modbus_rtu_uart_irq_set(modbus_irq_t irq_state) {
 		__HAL_UART_DISABLE_IT(modbus_rtu.uart.uart, UART_IT_RXNE);
 		dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 		if (modbus_rtu.uart.uart_dir_port != NULL) {
-			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_RX);
-			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_RX) {
+			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_RX);
+			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_RX) {
 			}
 		}
 		break;
@@ -175,8 +186,10 @@ static void modbus_rtu_uart_irq_set(modbus_irq_t irq_state) {
 		wait_while_uart_busy();
 		__HAL_UART_DISABLE_IT(modbus_rtu.uart.uart, UART_IT_TXE);
 		if (modbus_rtu.uart.uart_dir_port != NULL) {
-			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_RX);
-			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_RX) {
+			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_RX);
+			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_RX) {
 			}
 		}
 		dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
@@ -186,8 +199,10 @@ static void modbus_rtu_uart_irq_set(modbus_irq_t irq_state) {
 		__HAL_UART_DISABLE_IT(modbus_rtu.uart.uart, UART_IT_RXNE);
 		dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 		if (modbus_rtu.uart.uart_dir_port != NULL) {
-			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_TX);
-			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port, modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_TX) {
+			HAL_GPIO_WritePin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin, MODBUS_DIRECTION_TX);
+			while (HAL_GPIO_ReadPin(modbus_rtu.uart.uart_dir_port,
+					modbus_rtu.uart.uart_dir_pin) != MODBUS_DIRECTION_TX) {
 			}
 		}
 		send_byte();
@@ -209,7 +224,8 @@ void modbus_rtu_repeating_timer_callback(TIM_HandleTypeDef *htim) {
 	}
 	if (modbus_rtu.timers.timer_1_5.enable) {
 		modbus_rtu.timers.timer_1_5.cnt++;
-		if (modbus_rtu.timers.timer_1_5.cnt > modbus_rtu.timers.timer_1_5.timeout) {
+		if (modbus_rtu.timers.timer_1_5.cnt
+				> modbus_rtu.timers.timer_1_5.timeout) {
 			modbus_rtu.timers.timer_1_5.cnt = 0;
 			modbus_rtu.timers.timer_1_5.enable = 0;
 			switch (modbus_rtu.state) {
@@ -224,7 +240,8 @@ void modbus_rtu_repeating_timer_callback(TIM_HandleTypeDef *htim) {
 	}
 	if (modbus_rtu.timers.timer_3_5.enable) {
 		modbus_rtu.timers.timer_3_5.cnt++;
-		if (modbus_rtu.timers.timer_3_5.cnt > modbus_rtu.timers.timer_3_5.timeout) {
+		if (modbus_rtu.timers.timer_3_5.cnt
+				> modbus_rtu.timers.timer_3_5.timeout) {
 			modbus_rtu.timers.timer_3_5.cnt = 0;
 			modbus_rtu.timers.timer_3_5.enable = 0;
 			switch (modbus_rtu.state) {
@@ -258,8 +275,10 @@ static bool modbus_rtu_timers_init(void) {
 	case MODBUS_4800:
 	case MODBUS_9600:
 	case MODBUS_19200:
-		modbus_rtu.timers.timer_1_5.timeout = (uint32_t) (TIMER_15_COEFFICIENT / modbus_baudrate_2_number(modbus_rtu.uart.baudrate));
-		modbus_rtu.timers.timer_3_5.timeout = (uint32_t) (TIMER_35_COEFFICIENT / modbus_baudrate_2_number(modbus_rtu.uart.baudrate));
+		modbus_rtu.timers.timer_1_5.timeout = (uint32_t) (TIMER_15_COEFFICIENT
+				/ modbus_baudrate_2_number(modbus_rtu.uart.baudrate));
+		modbus_rtu.timers.timer_3_5.timeout = (uint32_t) (TIMER_35_COEFFICIENT
+				/ modbus_baudrate_2_number(modbus_rtu.uart.baudrate));
 		break;
 	case MODBUS_57600:
 	case MODBUS_115200:
@@ -309,7 +328,8 @@ void USART2_IRQHandler(void) {
 			if (modbus_rtu.send_cnt < modbus_rtu.send_buffer_len) {
 				send_byte();
 			} else {
-				memset((uint8_t*) modbus_rtu.send_buffer, 0, sizeof(modbus_rtu.send_buffer));
+				memset((uint8_t*) modbus_rtu.send_buffer, 0,
+						sizeof(modbus_rtu.send_buffer));
 				modbus_rtu.send_buffer_len = 0;
 				modbus_rtu.send_cnt = 0;
 				modbus_rtu_uart_irq_set(MODBUS_IRQ_ALL_OFF);
@@ -326,14 +346,16 @@ void USART2_IRQHandler(void) {
 				dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 				break;
 			case MODBUS_RTU_IDLE:
-				modbus_rtu.receive_buffer[modbus_rtu.receive_buffer_len] = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
+				modbus_rtu.receive_buffer[modbus_rtu.receive_buffer_len] =
+						(uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 				modbus_rtu.receive_buffer_len++;
 				modbus_rtu.state = MODBUS_RTU_RECEPTION;
 				modbus_rtu_timers_enable();
 				break;
 			case MODBUS_RTU_RECEPTION:
 				modbus_rtu_timers_reset();
-				modbus_rtu.receive_buffer[modbus_rtu.receive_buffer_len] = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
+				modbus_rtu.receive_buffer[modbus_rtu.receive_buffer_len] =
+						(uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 				modbus_rtu.receive_buffer_len++;
 				break;
 			case MODBUS_RTU_WAIT:
@@ -347,21 +369,24 @@ void USART2_IRQHandler(void) {
 		} else {
 			modbus_rtu_timers_disable();
 			dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
-			memset((uint8_t*) modbus_rtu.receive_buffer, 0, sizeof(modbus_rtu.receive_buffer));
+			memset((uint8_t*) modbus_rtu.receive_buffer, 0,
+					sizeof(modbus_rtu.receive_buffer));
 			modbus_rtu.receive_buffer_len = 0;
 			modbus_rtu.state = MODBUS_RTU_IDLE;
 		}
 	}
 
-	if(uart_isr_status & UART_FLAG_ORE){
-		memset((uint8_t*) modbus_rtu.send_buffer, 0, sizeof(modbus_rtu.send_buffer));
+	if (uart_isr_status & UART_FLAG_ORE) {
+		memset((uint8_t*) modbus_rtu.send_buffer, 0,
+				sizeof(modbus_rtu.send_buffer));
 		modbus_rtu.send_buffer_len = 0;
 		modbus_rtu.send_cnt = 0;
 		modbus_rtu_uart_irq_set(MODBUS_IRQ_ALL_OFF);
 
 		modbus_rtu_timers_disable();
 		dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
-		memset((uint8_t*) modbus_rtu.receive_buffer, 0, sizeof(modbus_rtu.receive_buffer));
+		memset((uint8_t*) modbus_rtu.receive_buffer, 0,
+				sizeof(modbus_rtu.receive_buffer));
 		modbus_rtu.receive_buffer_len = 0;
 		modbus_rtu.state = MODBUS_RTU_IDLE;
 
@@ -375,7 +400,8 @@ static uint8_t modbus_rtu_uart_init(void) {
 	if (HAL_UART_DeInit(modbus_rtu.uart.uart)) {
 		return (1);
 	}
-	modbus_rtu.uart.uart->Init.BaudRate = modbus_baudrate_2_number(modbus_rtu.uart.baudrate);
+	modbus_rtu.uart.uart->Init.BaudRate = modbus_baudrate_2_number(
+			modbus_rtu.uart.baudrate);
 	modbus_rtu.uart.uart->Init.WordLength = UART_WORDLENGTH_8B;
 	modbus_rtu.uart.uart->Init.StopBits = UART_STOPBITS_1;
 	modbus_rtu.uart.uart->Init.Parity = UART_PARITY_NONE;
@@ -388,16 +414,15 @@ static uint8_t modbus_rtu_uart_init(void) {
 	if (HAL_UART_Init(modbus_rtu.uart.uart)) {
 		return (1);
 	}
-	if (HAL_UARTEx_SetTxFifoThreshold(modbus_rtu.uart.uart, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
+	if (HAL_UARTEx_SetTxFifoThreshold(modbus_rtu.uart.uart,
+	UART_TXFIFO_THRESHOLD_1_8) != HAL_OK) {
 		return (1);
 	}
-	if (HAL_UARTEx_SetRxFifoThreshold(modbus_rtu.uart.uart, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
+	if (HAL_UARTEx_SetRxFifoThreshold(modbus_rtu.uart.uart,
+	UART_RXFIFO_THRESHOLD_1_8) != HAL_OK) {
 		return (1);
 	}
-	if (HAL_UARTEx_DisableFifoMode(modbus_rtu.uart.uart) != HAL_OK)
-	{
+	if (HAL_UARTEx_DisableFifoMode(modbus_rtu.uart.uart) != HAL_OK) {
 		return (1);
 	}
 	return (0);
@@ -419,21 +444,15 @@ static uint8_t modbus_rtu_uart_init(void) {
  * @param poll_timeout poll timeout
  * @return true - ok, false - some error occured
  */
-bool modbus_rtu_init(osThreadId_t task_handle,
-		uint8_t slave_address,
-		TIM_HandleTypeDef *repeating_timer,
-		UART_HandleTypeDef *uart,
-		modbus_baudrates_t baudrate,
-		uint16_t uart_dir_pin,
-		GPIO_TypeDef *uart_dir_port,
-		ModbusRegisterCallback registerCallback,
-		ModbusSlaveExceptionCallback exceptionCallback,
-		modbus_error_handler error_handler,
-		uint32_t poll_timeout) {
-	if (task_handle == NULL || registerCallback == NULL || repeating_timer == NULL || uart == NULL || exceptionCallback == NULL || error_handler == NULL || slave_address == 0 || slave_address > MODBUS_MAX_SLAVE_ADDRESS) {
+bool modbus_rtu_init(osThreadId_t task_handle, uint8_t slave_address,
+		TIM_HandleTypeDef *repeating_timer, UART_HandleTypeDef *uart,
+		modbus_baudrates_t baudrate, uint16_t uart_dir_pin,
+		GPIO_TypeDef *uart_dir_port, uint32_t poll_timeout) {
+	if (task_handle == NULL || repeating_timer == NULL || uart == NULL
+			|| slave_address == 0|| slave_address > MODBUS_MAX_SLAVE_ADDRESS) {
 		return (false);
 	}
-	if (modbus_port_init((modbus_t*) &(modbus_rtu.modbus), registerCallback, exceptionCallback, error_handler)) {
+	if (modbus_port_init((modbus_t*) &(modbus_rtu.modbus))) {
 		return (false);
 	}
 	modbus_rtu.task_handle = task_handle;
@@ -485,13 +504,20 @@ bool modbus_rtu_deinit(void) {
 }
 
 static void on_read_ready(void) {
-	modbus_rtu.modbus.err = modbusParseRequestRTU((ModbusSlave*) &(modbus_rtu.modbus.slave), modbus_rtu.slave_address, (uint8_t*) modbus_rtu.receive_buffer, modbus_rtu.receive_buffer_len);
-	memset((uint8_t*) modbus_rtu.receive_buffer, 0, sizeof(modbus_rtu.receive_buffer));
+	modbus_rtu.modbus.err = modbusParseRequestRTU(
+			(ModbusSlave*) &(modbus_rtu.modbus.slave), modbus_rtu.slave_address,
+			(uint8_t*) modbus_rtu.receive_buffer,
+			modbus_rtu.receive_buffer_len);
+	memset((uint8_t*) modbus_rtu.receive_buffer, 0,
+			sizeof(modbus_rtu.receive_buffer));
 	modbus_rtu.receive_buffer_len = 0;
 	if (modbusIsOk(modbus_rtu.modbus.err)) {
-		const uint8_t *send_buffer_pointer = modbusSlaveGetResponse((ModbusSlave*) &(modbus_rtu.modbus.slave));
-		modbus_rtu.send_buffer_len = modbusSlaveGetResponseLength((ModbusSlave*) &(modbus_rtu.modbus.slave));
-		memcpy((uint8_t*) modbus_rtu.send_buffer, send_buffer_pointer, modbus_rtu.send_buffer_len);
+		const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(
+				(ModbusSlave*) &(modbus_rtu.modbus.slave));
+		modbus_rtu.send_buffer_len = modbusSlaveGetResponseLength(
+				(ModbusSlave*) &(modbus_rtu.modbus.slave));
+		memcpy((uint8_t*) modbus_rtu.send_buffer, send_buffer_pointer,
+				modbus_rtu.send_buffer_len);
 		modbusSlaveFreeResponse((ModbusSlave*) &(modbus_rtu.modbus.slave));
 	}
 }
@@ -511,14 +537,15 @@ static void on_emit_ready(void) {
  */
 bool modbus_rtu_poll(void) {
 	if (notify_wait()) {
-		if(READ_BIT(modbus_rtu.uart.uart->Instance->ISR, USART_ISR_ORE)){
+		if (READ_BIT(modbus_rtu.uart.uart->Instance->ISR, USART_ISR_ORE)) {
 			dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 			SET_BIT(modbus_rtu.uart.uart->Instance->ICR, USART_ICR_ORECF);
 			__HAL_UART_ENABLE_IT(modbus_rtu.uart.uart, UART_IT_RXNE);
 		}
 		return (false);
 	}
-	if ((modbus_rtu.events & MODBUS_RTU_READ_READY) && (modbus_rtu.events & MODBUS_RTU_EMIT_READY)) {
+	if ((modbus_rtu.events & MODBUS_RTU_READ_READY)
+			&& (modbus_rtu.events & MODBUS_RTU_EMIT_READY)) {
 		on_read_ready();
 		on_emit_ready();
 	} else if (modbus_rtu.events & MODBUS_RTU_READ_READY) {
@@ -526,7 +553,7 @@ bool modbus_rtu_poll(void) {
 	} else if (modbus_rtu.events & MODBUS_RTU_EMIT_READY) {
 		on_emit_ready();
 	} else {
-		modbus_rtu.modbus.error_handler("MODBUS RTU wrong state");
+		modbus_error_callback("MODBUS RTU wrong state");
 	}
 	return (true);
 }

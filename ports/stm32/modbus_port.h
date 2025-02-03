@@ -1,3 +1,9 @@
+/**
+ * file: modbus_port.h
+ * Author: kuba23c
+ * Description: Lightmodbus static allocator port
+ */
+
 #ifndef _MODBUS_PORT_H
 #define _MODBUS_PORT_H
 
@@ -11,15 +17,12 @@
 
 #define STATIC_BUFFER_SIZE 256
 
-typedef void (*modbus_error_handler)(const char *const error_string);
-
 typedef struct {
 	ModbusSlave slave;
 	ModbusErrorInfo err;
 	uint8_t buffer[STATIC_BUFFER_SIZE];
-	modbus_error_handler error_handler;
 } modbus_t;
 
-bool modbus_port_init(modbus_t *const modbus, ModbusRegisterCallback registerCallback, ModbusSlaveExceptionCallback exceptionCallback, modbus_error_handler error_handler);
+bool modbus_port_init(modbus_t *const modbus);
 
 #endif
