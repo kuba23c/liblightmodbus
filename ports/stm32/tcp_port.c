@@ -78,8 +78,7 @@ static void modbus_tcp_listener_on_error(void *arg, err_t err) {
  *            Only return ERR_ABRT if you have called tcp_abort from within the
  *            callback function!
  */
-static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb,
-		struct pbuf *p, err_t err) {
+static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
 
 	if (err) {
@@ -97,13 +96,10 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb,
 	uint16_t len = p->tot_len;
 
 	while (p_temp) {
-		client->modbus.err = modbusParseRequestTCP(&(client->modbus.slave),
-				(uint8_t*) p_temp->payload, p_temp->len);
+		client->modbus.err = modbusParseRequestTCP(&(client->modbus.slave), (uint8_t*) p_temp->payload, p_temp->len);
 		if (modbusIsOk(client->modbus.err)) {
-			const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(
-					&(client->modbus.slave));
-			uint16_t send_buffer_len = modbusSlaveGetResponseLength(
-					&(client->modbus.slave));
+			const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(&(client->modbus.slave));
+			uint16_t send_buffer_len = modbusSlaveGetResponseLength(&(client->modbus.slave));
 			tcp_write(tpcb, send_buffer_pointer, send_buffer_len,
 			TCP_WRITE_FLAG_COPY);
 			modbusSlaveFreeResponse(&(client->modbus.slave));
@@ -125,6 +121,8 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb,
  *            callback function!
  */
 static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
+	UNUSED(arg);
+	UNUSED(err);
 	err_t result = ERR_ABRT;
 	for (int i = 0; i < MODBUS_TCP_MAX_CLIENTS; ++i) {
 		if (modbus_tcp.clients[i].client_pcb == NULL) {
@@ -134,12 +132,9 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 				newpcb->keep_cnt = MODBUS_TCP_KEEP_CNT;
 				tcp_nagle_disable(newpcb);
 				modbus_tcp.clients[i].client_pcb = newpcb;
-				tcp_arg(modbus_tcp.clients[i].client_pcb,
-						&modbus_tcp.clients[i]);
-				tcp_err(modbus_tcp.clients[i].client_pcb,
-						modbus_tcp_client_on_error);
-				tcp_recv(modbus_tcp.clients[i].client_pcb,
-						modbus_tcp_on_receive);
+				tcp_arg(modbus_tcp.clients[i].client_pcb, &modbus_tcp.clients[i]);
+				tcp_err(modbus_tcp.clients[i].client_pcb, modbus_tcp_client_on_error);
+				tcp_recv(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_receive);
 				result = ERR_OK;
 			}
 			break;
@@ -156,8 +151,7 @@ static void modbus_tcp_create_listener(void *ctx) {
 	if (modbus_tcp.listener_pcb == NULL) {
 		modbus_tcp.listener_pcb = tcp_new();
 		assert_param(modbus_tcp.listener_pcb != NULL);
-		assert_param(
-				tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) == ERR_OK);
+		assert_param(tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) == ERR_OK);
 		modbus_tcp.listener_pcb = tcp_listen(modbus_tcp.listener_pcb);
 		assert_param(modbus_tcp.listener_pcb != NULL);
 		tcp_arg(modbus_tcp.listener_pcb, &modbus_tcp.listener_pcb);
@@ -181,22 +175,16 @@ static void modbus_tcp_delete_listener(void *ctx) {
  */
 uint8_t modbus_tcp_init(void) {
 	if (modbus_tcp.create_listener == NULL) {
-		modbus_tcp.create_listener = tcpip_callbackmsg_new(
-				modbus_tcp_create_listener, NULL);
+		modbus_tcp.create_listener = tcpip_callbackmsg_new(modbus_tcp_create_listener, NULL);
 		assert_param(modbus_tcp.create_listener != NULL);
 		if (modbus_tcp.delete_listener == NULL) {
-			modbus_tcp.delete_listener = tcpip_callbackmsg_new(
-					modbus_tcp_delete_listener, NULL);
+			modbus_tcp.delete_listener = tcpip_callbackmsg_new(modbus_tcp_delete_listener, NULL);
 			assert_param(modbus_tcp.delete_listener != NULL);
 		}
-		assert_param(
-				tcpip_callbackmsg_trycallback(modbus_tcp.create_listener)
-						== ERR_OK);
+		assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
 		return (0);
 	} else {
-		assert_param(
-				tcpip_callbackmsg_trycallback(modbus_tcp.create_listener)
-						== ERR_OK);
+		assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
 		return (1);
 	}
 }
@@ -206,7 +194,5 @@ uint8_t modbus_tcp_init(void) {
  * @return 0 - OK, 1 - NOK
  */
 void modbus_tcp_deinit(void) {
-	assert_param(
-			tcpip_callbackmsg_trycallback(modbus_tcp.delete_listener)
-					== ERR_OK);
+	assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.delete_listener) == ERR_OK);
 }

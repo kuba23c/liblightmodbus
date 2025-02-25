@@ -11,16 +11,14 @@ void modbus_error_callback(const char *const error_string) {
 	modbus_error(error_string);
 }
 
-ModbusError modbus_exception_callback(const ModbusSlave *status,
-		uint8_t function, ModbusExceptionCode code) {
+ModbusError modbus_exception_callback(const ModbusSlave *status, uint8_t function, ModbusExceptionCode code) {
 	UNUSED(status);
 	modbus_exception(function, code);
 	return (MODBUS_OK);
 }
 
-ModbusError modbus_register_callback(const ModbusSlave *status,
-		const ModbusRegisterCallbackArgs *args,
-		ModbusRegisterCallbackResult *out) {
+ModbusError modbus_register_callback(const ModbusSlave *status, const ModbusRegisterCallbackArgs *args, ModbusRegisterCallbackResult *out) {
+	UNUSED(status);
 	uint16_t index = (args->index);
 
 	switch (args->query) {
@@ -53,6 +51,10 @@ ModbusError modbus_register_callback(const ModbusSlave *status,
 		if (args->type == MODBUS_HOLDING_REGISTER) {
 			modbus_reg_write(index, args->value);
 		}
+		break;
+	default:
+		out->exceptionCode = MODBUS_EXCEP_ILLEGAL_FUNCTION;
+		out->value = 0;
 		break;
 	}
 	return (MODBUS_OK);
