@@ -17,10 +17,12 @@
 #define MODBUS_TCP_SEND_MESSAGE_MAX_SIZE 260
 #define MODBUS_TCP_REC_MULT 4
 #define MODBUS_TCP_MAX_CLIENTS 2
+#define MODBUS_TCP_MAX_IDLE_SEC	3
 
 typedef struct {
 	modbus_t modbus;
 	struct tcp_pcb *client_pcb;
+	uint8_t idle_cnt;
 } modbus_tcp_client_t;
 
 typedef struct {
@@ -36,6 +38,10 @@ static modbus_tcp_t modbus_tcp = { 0 };
 #define MODBUS_TCP_KEEP_INTVL 1000
 #define MODBUS_TCP_KEEP_CNT 3
 
+static void modbus_tcp_client_clean(modbus_tcp_client_t *client) {
+	memset(client, 0, sizeof(modbus_tcp_client_t));
+}
+
 /** Function prototype for tcp error callback functions. Called when the pcb
  * receives a RST or is unexpectedly closed for any other reason.
  *
@@ -49,7 +55,7 @@ static modbus_tcp_t modbus_tcp = { 0 };
 static void modbus_tcp_client_on_error(void *arg, err_t err) {
 	UNUSED(err);
 	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
-	client->client_pcb = NULL;
+	modbus_tcp_client_clean(client);
 }
 
 /** Function prototype for tcp error callback functions. Called when the pcb
@@ -82,10 +88,12 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
 
 	if (err) {
+		modbus_tcp_client_clean(client);
 		tcp_abort(tpcb);
 		return (ERR_ABRT);
 	}
 	if (p == NULL) {
+		modbus_tcp_client_clean(client);
 		if (tcp_close(tpcb) != ERR_OK) {
 			tcp_abort(tpcb);
 			return (ERR_ABRT);
@@ -111,6 +119,29 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 	return (ERR_OK);
 }
 
+/** Function prototype for tcp poll callback functions. Called periodically as
+ * specified by @see tcp_poll.
+ *
+ * @param arg Additional argument to pass to the callback function (@see tcp_arg())
+ * @param tpcb tcp pcb
+ * @return ERR_OK: try to send some data by calling tcp_output
+ *            Only return ERR_ABRT if you have called tcp_abort from within the
+ *            callback function!
+ */
+static err_t modbus_tcp_on_poll(void *arg, struct tcp_pcb *tpcb) {
+	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
+
+	client->idle_cnt++;
+	if (client->idle_cnt >= MODBUS_TCP_MAX_IDLE_SEC) {
+		modbus_tcp_client_clean(client);
+		if (tcp_close(tpcb) != ERR_OK) {
+			tcp_abort(tpcb);
+			return (ERR_ABRT);
+		}
+	}
+	return (ERR_OK);
+}
+
 /** Function prototype for tcp accept callback functions. Called when a new
  * connection can be accepted on a listening pcb.
  *
@@ -132,8 +163,10 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 				newpcb->keep_cnt = MODBUS_TCP_KEEP_CNT;
 				tcp_nagle_disable(newpcb);
 				modbus_tcp.clients[i].client_pcb = newpcb;
+				modbus_tcp.clients[i].idle_cnt = 0;
 				tcp_arg(modbus_tcp.clients[i].client_pcb, &modbus_tcp.clients[i]);
 				tcp_err(modbus_tcp.clients[i].client_pcb, modbus_tcp_client_on_error);
+				tcp_poll(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_poll, 2);
 				tcp_recv(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_receive);
 				result = ERR_OK;
 			}
@@ -152,10 +185,10 @@ static void modbus_tcp_create_listener(void *ctx) {
 		modbus_tcp.listener_pcb = tcp_new();
 		assert_param(modbus_tcp.listener_pcb != NULL);
 		assert_param(tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) == ERR_OK);
+		tcp_err(modbus_tcp.listener_pcb, modbus_tcp_listener_on_error);
 		modbus_tcp.listener_pcb = tcp_listen(modbus_tcp.listener_pcb);
 		assert_param(modbus_tcp.listener_pcb != NULL);
 		tcp_arg(modbus_tcp.listener_pcb, &modbus_tcp.listener_pcb);
-		tcp_err(modbus_tcp.listener_pcb, modbus_tcp_listener_on_error);
 		tcp_accept(modbus_tcp.listener_pcb, modbus_tcp_on_accept);
 	}
 }
