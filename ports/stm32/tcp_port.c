@@ -30,6 +30,8 @@ typedef struct {
 	modbus_tcp_client_t clients[MODBUS_TCP_MAX_CLIENTS];
 	struct tcpip_callback_msg *create_listener;
 	struct tcpip_callback_msg *delete_listener;
+	modbus_tcp_stats_t stats;
+	bool inited;
 } modbus_tcp_t;
 
 static modbus_tcp_t modbus_tcp = { 0 };
@@ -56,6 +58,10 @@ static void modbus_tcp_client_on_error(void *arg, err_t err) {
 	UNUSED(err);
 	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
 	modbus_tcp_client_clean(client);
+	modbus_tcp.stats.clients_errors++;
+	if (modbus_tcp.stats.clients_connected) {
+		modbus_tcp.stats.clients_connected--;
+	}
 }
 
 /** Function prototype for tcp error callback functions. Called when the pcb
@@ -72,6 +78,10 @@ static void modbus_tcp_listener_on_error(void *arg, err_t err) {
 	UNUSED(err);
 	struct tcp_pcb **ptcp_pcb = (struct tcp_pcb**) arg;
 	*ptcp_pcb = NULL;
+	modbus_tcp.stats.listeners_errors++;
+	if (modbus_tcp.stats.listeners_active) {
+		modbus_tcp.stats.listeners_active--;
+	}
 }
 
 /** Function prototype for tcp receive callback functions. Called when data has
@@ -93,10 +103,16 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 		return (ERR_ABRT);
 	}
 	if (p == NULL) {
+		modbus_tcp.stats.clients_closed++;
 		modbus_tcp_client_clean(client);
 		if (tcp_close(tpcb) != ERR_OK) {
 			tcp_abort(tpcb);
 			return (ERR_ABRT);
+		} else {
+			if (modbus_tcp.stats.clients_connected) {
+				modbus_tcp.stats.clients_connected--;
+			}
+			modbus_tcp.stats.clients_closed++;
 		}
 		return (ERR_OK);
 	}
@@ -104,13 +120,17 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 	uint16_t len = p->tot_len;
 
 	while (p_temp) {
+		modbus_tcp.stats.messages_received++;
 		client->modbus.err = modbusParseRequestTCP(&(client->modbus.slave), (uint8_t*) p_temp->payload, p_temp->len);
 		if (modbusIsOk(client->modbus.err)) {
+			modbus_tcp.stats.messages_ok++;
 			const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(&(client->modbus.slave));
 			uint16_t send_buffer_len = modbusSlaveGetResponseLength(&(client->modbus.slave));
-			tcp_write(tpcb, send_buffer_pointer, send_buffer_len,
-			TCP_WRITE_FLAG_COPY);
+			tcp_write(tpcb, send_buffer_pointer, send_buffer_len, TCP_WRITE_FLAG_COPY);
+			modbus_tcp.stats.messages_sent++;
 			modbusSlaveFreeResponse(&(client->modbus.slave));
+		} else {
+			modbus_tcp.stats.messages_nok++;
 		}
 		p_temp = p_temp->next;
 	}
@@ -133,10 +153,16 @@ static err_t modbus_tcp_on_poll(void *arg, struct tcp_pcb *tpcb) {
 
 	client->idle_cnt++;
 	if (client->idle_cnt >= MODBUS_TCP_MAX_IDLE_SEC) {
+		modbus_tcp.stats.clients_timeouts++;
 		modbus_tcp_client_clean(client);
 		if (tcp_close(tpcb) != ERR_OK) {
 			tcp_abort(tpcb);
 			return (ERR_ABRT);
+		} else {
+			if (modbus_tcp.stats.clients_connected) {
+				modbus_tcp.stats.clients_connected--;
+			}
+			modbus_tcp.stats.clients_closed++;
 		}
 	}
 	return (ERR_OK);
@@ -169,12 +195,18 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 				tcp_poll(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_poll, 2);
 				tcp_recv(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_receive);
 				result = ERR_OK;
+			} else {
+				modbus_tcp.stats.modbus_internal_errors++;
 			}
 			break;
 		}
 	}
 	if (result == ERR_ABRT) {
 		tcp_abort(newpcb);
+		modbus_tcp.stats.clients_rejected++;
+	} else {
+		modbus_tcp.stats.clients_accepted++;
+		modbus_tcp.stats.clients_connected++;
 	}
 	return (result);
 }
@@ -183,13 +215,27 @@ static void modbus_tcp_create_listener(void *ctx) {
 	UNUSED(ctx);
 	if (modbus_tcp.listener_pcb == NULL) {
 		modbus_tcp.listener_pcb = tcp_new();
-		assert_param(modbus_tcp.listener_pcb != NULL);
-		assert_param(tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) == ERR_OK);
+		if (modbus_tcp.listener_pcb == NULL) {
+			modbus_tcp.stats.listeners_tcp_stack_error++;
+			return;
+		}
+		if (tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) != ERR_OK) {
+			modbus_tcp.stats.listeners_tcp_stack_error++;
+			tcp_close(modbus_tcp.listener_pcb);
+			return;
+		}
 		tcp_err(modbus_tcp.listener_pcb, modbus_tcp_listener_on_error);
 		modbus_tcp.listener_pcb = tcp_listen(modbus_tcp.listener_pcb);
-		assert_param(modbus_tcp.listener_pcb != NULL);
+		if (modbus_tcp.listener_pcb == NULL) {
+			modbus_tcp.stats.listeners_tcp_stack_error++;
+			return;
+		}
 		tcp_arg(modbus_tcp.listener_pcb, &modbus_tcp.listener_pcb);
 		tcp_accept(modbus_tcp.listener_pcb, modbus_tcp_on_accept);
+		modbus_tcp.stats.listeners_active++;
+		modbus_tcp.stats.listeners_opened++;
+	} else {
+		modbus_tcp.stats.listeners_rejected++;
 	}
 }
 
@@ -198,34 +244,71 @@ static void modbus_tcp_delete_listener(void *ctx) {
 	if (modbus_tcp.listener_pcb) {
 		if (tcp_close(modbus_tcp.listener_pcb) != ERR_OK) {
 			tcp_abort(modbus_tcp.listener_pcb);
+		} else {
+			if (modbus_tcp.stats.listeners_active) {
+				modbus_tcp.stats.listeners_active--;
+			}
+			modbus_tcp.stats.listeners_closed++;
 		}
 	}
 }
 
 /**
  * @brief Init modbus tcp
- * @return 0 - OK, 1 - NOK
+ * call only once
  */
-uint8_t modbus_tcp_init(void) {
-	if (modbus_tcp.create_listener == NULL) {
+void modbus_tcp_init(void) {
+	if (!modbus_tcp.inited) {
+		modbus_tcp.inited = true;
+		modbus_tcp.stats.clients_max = MODBUS_TCP_MAX_CLIENTS;
+		modbus_tcp.stats.listeners_max = 1;
 		modbus_tcp.create_listener = tcpip_callbackmsg_new(modbus_tcp_create_listener, NULL);
 		assert_param(modbus_tcp.create_listener != NULL);
-		if (modbus_tcp.delete_listener == NULL) {
-			modbus_tcp.delete_listener = tcpip_callbackmsg_new(modbus_tcp_delete_listener, NULL);
-			assert_param(modbus_tcp.delete_listener != NULL);
-		}
-		assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
-		return (0);
-	} else {
-		assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
-		return (1);
+		modbus_tcp.delete_listener = tcpip_callbackmsg_new(modbus_tcp_delete_listener, NULL);
+		assert_param(modbus_tcp.delete_listener != NULL);
 	}
 }
 
 /**
- * @brief Deinit modbus tcp
- * @return 0 - OK, 1 - NOK
+ * @brief Start modbus tcp
  */
-void modbus_tcp_deinit(void) {
-	assert_param(tcpip_callbackmsg_trycallback(modbus_tcp.delete_listener) == ERR_OK);
+bool modbus_tcp_start(void) {
+	return (tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
+}
+
+/**
+ * @brief Stop modbus tcp
+ */
+bool modbus_tcp_stop(void) {
+	return (tcpip_callbackmsg_trycallback(modbus_tcp.delete_listener) == ERR_OK);
+}
+
+/**
+ * @brief get stats of modbus tcp
+ * @return pointer to stats
+ */
+const modbus_tcp_stats_t* modbus_tcp_stats(void) {
+	return (&modbus_tcp.stats);
+}
+
+/**
+ * @brief clear modbus stats
+ * Do it only when modbus tcp is NOT active
+ */
+void modbus_tcp_clear_stats(void) {
+	memset(&modbus_tcp.stats, 0, sizeof(modbus_tcp_stats_t));
+}
+
+/**
+ * @brief check if modbus tcp is active
+ * It is NOT set in modbus_tcp_start but some time later when lwip stack will pick up a message,
+ * so you have to wait a litte after modbus_tcp_start call
+ * @return
+ */
+bool modbus_tcp_is_active(void) {
+	if (modbus_tcp.stats.listeners_active) {
+		return (true);
+	} else {
+		return (false);
+	}
 }
