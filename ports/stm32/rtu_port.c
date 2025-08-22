@@ -311,7 +311,7 @@ static void modbus_rtu_timers_disable(void) {
 	modbus_rtu.timers.timer_3_5.enable = 0;
 }
 
-void USART2_IRQHandler(void) {
+void UART7_IRQHandler(void) {
 	uart_isr_status = modbus_rtu.uart.uart->Instance->ISR;
 
 	if (uart_isr_status & UART_FLAG_TXE) {
