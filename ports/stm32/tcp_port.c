@@ -61,6 +61,7 @@ static void modbus_tcp_client_on_error(void *arg, err_t err) {
 	modbus_tcp.stats.clients_errors++;
 	if (modbus_tcp.stats.clients_connected) {
 		modbus_tcp.stats.clients_connected--;
+		modbus_tcp.stats.clients_closed++;
 	}
 }
 
@@ -103,7 +104,6 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 		return (ERR_ABRT);
 	}
 	if (p == NULL) {
-		modbus_tcp.stats.clients_closed++;
 		modbus_tcp_client_clean(client);
 		if (tcp_close(tpcb) != ERR_OK) {
 			tcp_abort(tpcb);
@@ -111,13 +111,14 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 		} else {
 			if (modbus_tcp.stats.clients_connected) {
 				modbus_tcp.stats.clients_connected--;
+				modbus_tcp.stats.clients_closed++;
 			}
-			modbus_tcp.stats.clients_closed++;
 		}
 		return (ERR_OK);
 	}
 	struct pbuf *p_temp = p;
 	uint16_t len = p->tot_len;
+	client->idle_cnt = 0;
 
 	while (p_temp) {
 		modbus_tcp.stats.messages_received++;
@@ -161,8 +162,8 @@ static err_t modbus_tcp_on_poll(void *arg, struct tcp_pcb *tpcb) {
 		} else {
 			if (modbus_tcp.stats.clients_connected) {
 				modbus_tcp.stats.clients_connected--;
+				modbus_tcp.stats.clients_closed++;
 			}
-			modbus_tcp.stats.clients_closed++;
 		}
 	}
 	return (ERR_OK);
