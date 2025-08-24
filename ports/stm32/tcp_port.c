@@ -14,15 +14,22 @@
 
 #define MODBUS_TCP_PORT_DEFAULT 502
 #define MODBUS_TCP_REC_MESSAGE_MAX_SIZE 260 // 7+1+252
+#define MODBUS_TCP_REC_MESSAGE_MIN_SIZE 8
 #define MODBUS_TCP_SEND_MESSAGE_MAX_SIZE 260
 #define MODBUS_TCP_REC_MULT 4
 #define MODBUS_TCP_MAX_CLIENTS 2
 #define MODBUS_TCP_MAX_IDLE_SEC	3
+#define MODBUS_TCP_LEN_HIGHER_BYTE	4
+#define MODBUS_TCP_LEN_LOWER_BYTE	5
+#define MODBUS_TCP_HEADER_LEN		6
 
 typedef struct {
 	modbus_t modbus;
 	struct tcp_pcb *client_pcb;
 	uint8_t idle_cnt;
+	uint8_t buff[MODBUS_TCP_REC_MESSAGE_MAX_SIZE];
+	uint16_t buff_len;
+	bool is_ok;
 } modbus_tcp_client_t;
 
 typedef struct {
@@ -85,6 +92,95 @@ static void modbus_tcp_listener_on_error(void *arg, err_t err) {
 	}
 }
 
+static bool handle_modbus_data(modbus_tcp_client_t *const client, struct tcp_pcb *tpcb, const uint8_t *const buff, uint16_t len) {
+	client->modbus.err = modbusParseRequestTCP(&(client->modbus.slave), buff, len);
+	if (modbusIsOk(client->modbus.err)) {
+		modbus_tcp.stats.messages_received++;
+		modbus_tcp.stats.messages_ok++;
+		const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(&(client->modbus.slave));
+		uint16_t send_buffer_len = modbusSlaveGetResponseLength(&(client->modbus.slave));
+//		if (tcp_sndbuf(tpcb) < send_buffer_len) {
+//			assert_param(tcp_output(tpcb) == ERR_OK);
+//			assert_param(tcp_sndbuf(tpcb) >= send_buffer_len);
+//		}
+		assert_param(tcp_write(tpcb, send_buffer_pointer, send_buffer_len, TCP_WRITE_FLAG_COPY) == ERR_OK);
+		assert_param(tcp_output(tpcb) == ERR_OK);
+
+		modbus_tcp.stats.messages_sent++;
+		modbusSlaveFreeResponse(&(client->modbus.slave));
+		client->is_ok = true;
+		return true;
+	} else {
+		client->is_ok = false;
+		client->buff_len = 0;
+		modbus_tcp.stats.messages_received++;
+		modbus_tcp.stats.messages_nok++;
+		return false;
+	}
+}
+
+static bool handle_normal_data(modbus_tcp_client_t *const client, struct tcp_pcb *tpcb, uint8_t **const payload, uint16_t *const len) {
+	uint16_t id_and_pdu_len = (((uint16_t) (*payload)[MODBUS_TCP_LEN_HIGHER_BYTE]) << 8) | ((uint16_t) (*payload)[MODBUS_TCP_LEN_LOWER_BYTE]);
+	uint16_t real_len = MODBUS_TCP_HEADER_LEN + id_and_pdu_len;
+	if (real_len > MODBUS_TCP_REC_MESSAGE_MAX_SIZE) {
+		client->is_ok = false;
+		client->buff_len = 0;
+		modbus_tcp.stats.messages_received++;
+		modbus_tcp.stats.messages_nok++;
+		return false;
+	}
+	if (real_len > *len) {
+		if (client->is_ok && client->buff_len == 0) {
+			memcpy(client->buff, *payload, *len);
+			client->buff_len = *len;
+		} else {
+			client->is_ok = false;
+			client->buff_len = 0;
+			modbus_tcp.stats.messages_received++;
+			modbus_tcp.stats.messages_nok++;
+		}
+		return false;
+	}
+	if (!handle_modbus_data(client, tpcb, *payload, real_len)) {
+		return false;
+	}
+	*len -= real_len;
+	*payload += real_len;
+	return true;
+}
+
+static bool handle_prev_data(modbus_tcp_client_t *client, struct tcp_pcb *tpcb, uint8_t **const payload, uint16_t *const len) {
+	uint16_t to_copy_bytes = MODBUS_TCP_REC_MESSAGE_MAX_SIZE - client->buff_len;
+	if (to_copy_bytes > *len) {
+		to_copy_bytes = *len;
+	}
+	memcpy(client->buff + client->buff_len, *payload, to_copy_bytes);
+	uint16_t id_and_pdu_len = (((uint16_t) client->buff[MODBUS_TCP_LEN_HIGHER_BYTE]) << 8) | ((uint16_t) client->buff[MODBUS_TCP_LEN_LOWER_BYTE]);
+	uint16_t real_len = MODBUS_TCP_HEADER_LEN + id_and_pdu_len;
+	if (real_len > MODBUS_TCP_REC_MESSAGE_MAX_SIZE) {
+		client->is_ok = false;
+		client->buff_len = 0;
+		modbus_tcp.stats.messages_received++;
+		modbus_tcp.stats.messages_nok++;
+		return false;
+	}
+	if (real_len > client->buff_len + *len) {
+		client->is_ok = false;
+		client->buff_len = 0;
+		modbus_tcp.stats.messages_received++;
+		modbus_tcp.stats.messages_nok++;
+		return false;
+	}
+	if (!handle_modbus_data(client, tpcb, client->buff, real_len)) {
+		return false;
+	}
+	uint16_t bytes_to_remove = real_len - client->buff_len;
+	*len -= bytes_to_remove;
+	*payload += bytes_to_remove;
+	client->buff_len = 0;
+	return true;
+}
+
 /** Function prototype for tcp receive callback functions. Called when data has
  * been received.
  *
@@ -98,8 +194,11 @@ static void modbus_tcp_listener_on_error(void *arg, err_t err) {
 static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
 
-	if (err) {
+	if (err || client->client_pcb != tpcb) {
 		modbus_tcp_client_clean(client);
+		if (p != NULL) {
+			pbuf_free(p);
+		}
 		tcp_abort(tpcb);
 		return (ERR_ABRT);
 	}
@@ -116,27 +215,44 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 		}
 		return (ERR_OK);
 	}
-	struct pbuf *p_temp = p;
-	uint16_t len = p->tot_len;
-	client->idle_cnt = 0;
 
-	while (p_temp) {
-		modbus_tcp.stats.messages_received++;
-		client->modbus.err = modbusParseRequestTCP(&(client->modbus.slave), (uint8_t*) p_temp->payload, p_temp->len);
-		if (modbusIsOk(client->modbus.err)) {
-			modbus_tcp.stats.messages_ok++;
-			const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(&(client->modbus.slave));
-			uint16_t send_buffer_len = modbusSlaveGetResponseLength(&(client->modbus.slave));
-			tcp_write(tpcb, send_buffer_pointer, send_buffer_len, TCP_WRITE_FLAG_COPY);
-			modbus_tcp.stats.messages_sent++;
-			modbusSlaveFreeResponse(&(client->modbus.slave));
-		} else {
-			modbus_tcp.stats.messages_nok++;
+	client->idle_cnt = 0;
+	for (struct pbuf *p_temp = p; p_temp != NULL; p_temp = p_temp->next) {
+		uint8_t *payload = (uint8_t*) p_temp->payload;
+		uint16_t len = p_temp->len;
+		while (len) {
+			if (client->buff_len + len < MODBUS_TCP_REC_MESSAGE_MIN_SIZE) {
+				if (client->is_ok && client->buff_len == 0) {
+					memcpy(client->buff, payload, len);
+					client->buff_len = len;
+				} else {
+					client->is_ok = false;
+					client->buff_len = 0;
+					modbus_tcp.stats.messages_received++;
+					modbus_tcp.stats.messages_nok++;
+				}
+				break;
+			}
+			if (client->buff_len) {
+				if (handle_prev_data(client, tpcb, &payload, &len)) {
+					continue;
+				} else if (handle_normal_data(client, tpcb, &payload, &len)) {
+					continue;
+				} else {
+					break;
+				}
+			} else {
+				if (handle_normal_data(client, tpcb, &payload, &len)) {
+					continue;
+				} else {
+					break;
+				}
+			}
 		}
-		p_temp = p_temp->next;
 	}
+
+	tcp_recved(tpcb, p->tot_len);
 	pbuf_free(p);
-	tcp_recved(tpcb, len);
 	return (ERR_OK);
 }
 
@@ -191,6 +307,8 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 				tcp_nagle_disable(newpcb);
 				modbus_tcp.clients[i].client_pcb = newpcb;
 				modbus_tcp.clients[i].idle_cnt = 0;
+				modbus_tcp.clients[i].is_ok = false;
+				modbus_tcp.clients[i].buff_len = 0;
 				tcp_arg(modbus_tcp.clients[i].client_pcb, &modbus_tcp.clients[i]);
 				tcp_err(modbus_tcp.clients[i].client_pcb, modbus_tcp_client_on_error);
 				tcp_poll(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_poll, 2);
