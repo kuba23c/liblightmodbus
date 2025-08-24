@@ -2,6 +2,8 @@
  * file: tcp_port.h
  * Author: kuba23c
  * Description: Lightmodbus TCP port for STM32 + CMSIS RTOSv2 + FreeRTOS + LwIP
+ *
+ * IMPORTANT: required LwRB v3.2.0
  */
 
 #ifndef _TCP_PORT_H
@@ -21,6 +23,7 @@ typedef struct {
 	uint32_t messages_sent;
 	uint32_t messages_ok;
 	uint32_t messages_nok;
+	uint32_t messages_ring_buffer_full;
 	uint8_t listeners_active;
 	uint8_t listeners_max;
 	uint32_t listeners_rejected;

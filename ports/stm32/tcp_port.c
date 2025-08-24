@@ -2,6 +2,8 @@
  * file: tcp_port.c
  * Author: kuba23c
  * Description: Lightmodbus TCP port for STM32 + CMSIS RTOSv2 + FreeRTOS + LwIP
+ *
+ * IMPORTANT: required LwRB v3.2.0
  */
 
 #include "tcp_port.h"
@@ -11,6 +13,7 @@
 #include "lwip.h"
 #include "tcp.h"
 #include "modbus_callbacks.h"
+#include "lwrb.h"
 
 #define MODBUS_TCP_PORT_DEFAULT 502
 #define MODBUS_TCP_REC_MESSAGE_MAX_SIZE 260 // 7+1+252
@@ -22,13 +25,17 @@
 #define MODBUS_TCP_LEN_HIGHER_BYTE	4
 #define MODBUS_TCP_LEN_LOWER_BYTE	5
 #define MODBUS_TCP_HEADER_LEN		6
+#define MODBUS_TCP_RING_BUFFER_SIZE	((uint32_t)(3 * 1024)) // you can tweak this value till have messages_ring_buffer_full
 
 typedef struct {
 	modbus_t modbus;
 	struct tcp_pcb *client_pcb;
 	uint8_t idle_cnt;
 	uint8_t buff[MODBUS_TCP_REC_MESSAGE_MAX_SIZE];
-	uint16_t buff_len;
+	uint32_t buff_len;
+	uint8_t ring_buff[MODBUS_TCP_RING_BUFFER_SIZE];
+	lwrb_t lwrb;
+	bool response_sent;
 	bool is_ok;
 } modbus_tcp_client_t;
 
@@ -99,17 +106,18 @@ static bool handle_modbus_data(modbus_tcp_client_t *const client, struct tcp_pcb
 		modbus_tcp.stats.messages_ok++;
 		const uint8_t *send_buffer_pointer = modbusSlaveGetResponse(&(client->modbus.slave));
 		uint16_t send_buffer_len = modbusSlaveGetResponseLength(&(client->modbus.slave));
-//		if (tcp_sndbuf(tpcb) < send_buffer_len) {
-//			assert_param(tcp_output(tpcb) == ERR_OK);
-//			assert_param(tcp_sndbuf(tpcb) >= send_buffer_len);
-//		}
-		assert_param(tcp_write(tpcb, send_buffer_pointer, send_buffer_len, TCP_WRITE_FLAG_COPY) == ERR_OK);
-		assert_param(tcp_output(tpcb) == ERR_OK);
 
-		modbus_tcp.stats.messages_sent++;
-		modbusSlaveFreeResponse(&(client->modbus.slave));
-		client->is_ok = true;
-		return true;
+		if (lwrb_get_free(&(client->lwrb)) < send_buffer_len) {
+			modbus_tcp.stats.messages_ring_buffer_full++;
+			modbusSlaveFreeResponse(&(client->modbus.slave));
+			return false;
+		} else {
+			lwrb_write(&(client->lwrb), send_buffer_pointer, send_buffer_len);
+			modbus_tcp.stats.messages_sent++;
+			modbusSlaveFreeResponse(&(client->modbus.slave));
+			client->is_ok = true;
+			return true;
+		}
 	} else {
 		client->is_ok = false;
 		client->buff_len = 0;
@@ -181,6 +189,21 @@ static bool handle_prev_data(modbus_tcp_client_t *client, struct tcp_pcb *tpcb, 
 	return true;
 }
 
+static void send_data_from_ring_buffer(modbus_tcp_client_t *client, struct tcp_pcb *tpcb) {
+	lwrb_sz_t to_send = lwrb_get_linear_block_read_length(&(client->lwrb));
+	if (to_send) {
+		uint32_t available_free_space = tcp_sndbuf(tpcb);
+		if (available_free_space < to_send) {
+			to_send = available_free_space;
+		}
+		client->idle_cnt = 0;
+		assert_param(tcp_write(tpcb, lwrb_get_linear_block_read_address(&(client->lwrb)), to_send, 0) == ERR_OK);
+		client->response_sent = true;
+	} else {
+		client->response_sent = false;
+	}
+}
+
 /** Function prototype for tcp receive callback functions. Called when data has
  * been received.
  *
@@ -234,25 +257,42 @@ static err_t modbus_tcp_on_receive(void *arg, struct tcp_pcb *tpcb, struct pbuf 
 				break;
 			}
 			if (client->buff_len) {
-				if (handle_prev_data(client, tpcb, &payload, &len)) {
-					continue;
-				} else if (handle_normal_data(client, tpcb, &payload, &len)) {
-					continue;
-				} else {
-					break;
+				if (!handle_prev_data(client, tpcb, &payload, &len)) {
+					if (!handle_normal_data(client, tpcb, &payload, &len)) {
+						break;
+					}
 				}
 			} else {
-				if (handle_normal_data(client, tpcb, &payload, &len)) {
-					continue;
-				} else {
+				if (!handle_normal_data(client, tpcb, &payload, &len)) {
 					break;
 				}
 			}
 		}
 	}
-
+	if (!client->response_sent) {
+		send_data_from_ring_buffer(client, tpcb);
+	}
 	tcp_recved(tpcb, p->tot_len);
 	pbuf_free(p);
+	return (ERR_OK);
+}
+
+/** Function prototype for tcp sent callback functions. Called when sent data has
+ * been acknowledged by the remote side. Use it to free corresponding resources.
+ * This also means that the pcb has now space available to send new data.
+ *
+ * @param arg Additional argument to pass to the callback function (@see tcp_arg())
+ * @param tpcb The connection pcb for which data has been acknowledged
+ * @param len The amount of bytes acknowledged
+ * @return ERR_OK: try to send some data by calling tcp_output
+ *            Only return ERR_ABRT if you have called tcp_abort from within the
+ *            callback function!
+ */
+static err_t modbus_tcp_on_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
+	modbus_tcp_client_t *client = (modbus_tcp_client_t*) arg;
+
+	lwrb_skip(&(client->lwrb), len);
+	send_data_from_ring_buffer(client, tpcb);
 	return (ERR_OK);
 }
 
@@ -309,9 +349,12 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 				modbus_tcp.clients[i].idle_cnt = 0;
 				modbus_tcp.clients[i].is_ok = false;
 				modbus_tcp.clients[i].buff_len = 0;
+				modbus_tcp.clients[i].response_sent = false;
+				lwrb_init(&(modbus_tcp.clients[i].lwrb), modbus_tcp.clients[i].ring_buff, MODBUS_TCP_RING_BUFFER_SIZE);
 				tcp_arg(modbus_tcp.clients[i].client_pcb, &modbus_tcp.clients[i]);
 				tcp_err(modbus_tcp.clients[i].client_pcb, modbus_tcp_client_on_error);
 				tcp_poll(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_poll, 2);
+				tcp_sent(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_sent);
 				tcp_recv(modbus_tcp.clients[i].client_pcb, modbus_tcp_on_receive);
 				result = ERR_OK;
 			} else {
