@@ -30,14 +30,16 @@ typedef struct {
 	uint32_t uart_errors;
 	uint32_t timer_errors;
 	uint32_t modbus_internal_errors;
+	uint32_t unknown_state;
 } modbus_rtu_stats_t;
 
 void modbus_rtu_repeating_timer_callback(TIM_HandleTypeDef *htim);
-bool modbus_rtu_start(osThreadId_t task_handle, uint8_t slave_address, TIM_HandleTypeDef *repeating_timer, UART_HandleTypeDef *uart,
+bool modbus_rtu_start(uint8_t id, osThreadId_t task_handle, uint8_t slave_address, TIM_HandleTypeDef *repeating_timer, UART_HandleTypeDef *uart,
 		modbus_baudrates_t baudrate, uint16_t uart_dir_pin, GPIO_TypeDef *uart_dir_port, uint32_t poll_timeout);
 bool modbus_rtu_stop(void);
 bool modbus_rtu_is_active(void);
 const modbus_rtu_stats_t* modbus_rtu_get_stats(void);
+const modbus_exceptions_t* modbus_rtu_get_exceptions(void);
 void modbus_rtu_clear_stats(void);
 bool modbus_rtu_poll(void);
 

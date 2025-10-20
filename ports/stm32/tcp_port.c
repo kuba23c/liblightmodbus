@@ -340,7 +340,7 @@ static err_t modbus_tcp_on_accept(void *arg, struct tcp_pcb *newpcb, err_t err) 
 	err_t result = ERR_ABRT;
 	for (int i = 0; i < MODBUS_TCP_MAX_CLIENTS; ++i) {
 		if (modbus_tcp.clients[i].client_pcb == NULL) {
-			if (!modbus_port_init(&(modbus_tcp.clients[i].modbus))) {
+			if (!modbus_port_init(&(modbus_tcp.clients[i].modbus), "TCP", i + 1)) {
 				newpcb->keep_idle = MODBUS_TCP_KEEP_IDLE;
 				newpcb->keep_intvl = MODBUS_TCP_KEEP_INTVL;
 				newpcb->keep_cnt = MODBUS_TCP_KEEP_CNT;
@@ -453,6 +453,13 @@ const modbus_tcp_stats_t* modbus_tcp_stats(void) {
 	return (&modbus_tcp.stats);
 }
 
+const modbus_exceptions_t* modbus_tcp_get_exceptions(uint8_t client_id) {
+	if (client_id == 0 || client_id > MODBUS_TCP_MAX_CLIENTS) {
+		return (NULL);
+	} else {
+		return ((modbus_exceptions_t*) &modbus_tcp.clients[client_id - 1].modbus.exceptions);
+	}
+}
 /**
  * @brief clear modbus stats
  * Do it only when modbus tcp is NOT active

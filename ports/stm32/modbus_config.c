@@ -7,11 +7,7 @@
 
 #include "modbus_config.h"
 
-__weak void modbus_error(const char *const error_string) {
-	UNUSED(error_string);
-}
-
-__weak void modbus_exception(uint8_t function, uint8_t code) {
+__weak void modbus_exception(uint8_t function, uint8_t code, const char *const name, uint8_t id) {
 	UNUSED(function);
 	UNUSED(code);
 }

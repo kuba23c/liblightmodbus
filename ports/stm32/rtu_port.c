@@ -428,7 +428,7 @@ static uint8_t modbus_rtu_uart_init(void) {
  * @param poll_timeout poll timeout
  * @return true - ok, false - some error occurred
  */
-bool modbus_rtu_start(osThreadId_t task_handle, uint8_t slave_address, TIM_HandleTypeDef *repeating_timer, UART_HandleTypeDef *uart,
+bool modbus_rtu_start(uint8_t id, osThreadId_t task_handle, uint8_t slave_address, TIM_HandleTypeDef *repeating_timer, UART_HandleTypeDef *uart,
 		modbus_baudrates_t baudrate, uint16_t uart_dir_pin, GPIO_TypeDef *uart_dir_port, uint32_t poll_timeout) {
 	if (task_handle == NULL || repeating_timer == NULL || uart == NULL || slave_address == 0 || slave_address > MODBUS_MAX_SLAVE_ADDRESS) {
 		return (false);
@@ -436,7 +436,7 @@ bool modbus_rtu_start(osThreadId_t task_handle, uint8_t slave_address, TIM_Handl
 	if (modbus_rtu.is_active) {
 		return (false);
 	} else {
-		if (modbus_port_init((modbus_t*) &(modbus_rtu.modbus))) {
+		if (modbus_port_init((modbus_t*) &(modbus_rtu.modbus), "RTU", id)) {
 			modbus_rtu.stats.modbus_internal_errors++;
 			return (false);
 		}
@@ -504,6 +504,10 @@ const modbus_rtu_stats_t* modbus_rtu_get_stats(void) {
 	return ((modbus_rtu_stats_t*) &modbus_rtu.stats);
 }
 
+const modbus_exceptions_t* modbus_rtu_get_exceptions(void) {
+	return ((modbus_exceptions_t*) &modbus_rtu.modbus.exceptions);
+}
+
 void modbus_rtu_clear_stats(void) {
 	memset((modbus_rtu_stats_t*) &modbus_rtu.stats, 0, sizeof(modbus_rtu_stats_t));
 }
@@ -556,7 +560,7 @@ bool modbus_rtu_poll(void) {
 	} else if (modbus_rtu.events & MODBUS_RTU_EMIT_READY) {
 		on_emit_ready();
 	} else {
-		modbus_error_callback("MODBUS RTU wrong state");
+		modbus_rtu.stats.unknown_state++;
 	}
 	return (true);
 }

@@ -7,13 +7,31 @@
 #include "modbus_callbacks.h"
 #include "modbus_config.h"
 
-void modbus_error_callback(const char *const error_string) {
-	modbus_error(error_string);
-}
-
 ModbusError modbus_exception_callback(const ModbusSlave *status, uint8_t function, ModbusExceptionCode code) {
-	UNUSED(status);
-	modbus_exception(function, code);
+	modbus_t *modbus = (modbus_t*) modbusSlaveGetUserPointer(status);
+	switch (code) {
+	case MODBUS_EXCEP_ILLEGAL_FUNCTION:
+		modbus->exceptions.illegal_function++;
+		break;
+	case MODBUS_EXCEP_ILLEGAL_ADDRESS:
+		modbus->exceptions.illegal_address++;
+		break;
+	case MODBUS_EXCEP_ILLEGAL_VALUE:
+		modbus->exceptions.illegal_value++;
+		break;
+	case MODBUS_EXCEP_SLAVE_FAILURE:
+		modbus->exceptions.slave_failure++;
+		break;
+	case MODBUS_EXCEP_ACK:
+		modbus->exceptions.acknowledge++;
+		break;
+	case MODBUS_EXCEP_NACK:
+		modbus->exceptions.negative_acknowledge++;
+		break;
+	default:
+		break;
+	}
+	modbus_exception(function, code, modbus->name, modbus->id);
 	return (MODBUS_OK);
 }
 

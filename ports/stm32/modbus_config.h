@@ -13,17 +13,11 @@
 /************* weak functions - for overwrite *******************/
 
 /**
- * @brief called when fatal error occurred in modbus driver
- * @param error_string
- */
-void modbus_error(const char *const error_string);
-
-/**
  * @brief called when exception occurred in modbus response
  * @param function - function id
  * @param code - error code
  */
-void modbus_exception(uint8_t function, uint8_t code);
+void modbus_exception(uint8_t function, uint8_t code, const char *const name, uint8_t id);
 
 /**
  * @brief Check if register allows reads
