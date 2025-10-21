@@ -15,7 +15,6 @@
 #include "modbus_callbacks.h"
 #include "lwrb.h"
 
-#define MODBUS_TCP_PORT_DEFAULT 502
 #define MODBUS_TCP_REC_MESSAGE_MAX_SIZE 260 // 7+1+252
 #define MODBUS_TCP_REC_MESSAGE_MIN_SIZE 8
 #define MODBUS_TCP_SEND_MESSAGE_MAX_SIZE 260
@@ -45,6 +44,7 @@ typedef struct {
 	struct tcpip_callback_msg *create_listener;
 	struct tcpip_callback_msg *delete_listener;
 	modbus_tcp_stats_t stats;
+	uint16_t port;
 	bool inited;
 } modbus_tcp_t;
 
@@ -381,7 +381,7 @@ static void modbus_tcp_create_listener(void *ctx) {
 			modbus_tcp.stats.listeners_tcp_stack_error++;
 			return;
 		}
-		if (tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, MODBUS_TCP_PORT_DEFAULT) != ERR_OK) {
+		if (tcp_bind(modbus_tcp.listener_pcb, IP4_ADDR_ANY, modbus_tcp.port) != ERR_OK) {
 			modbus_tcp.stats.listeners_tcp_stack_error++;
 			tcp_close(modbus_tcp.listener_pcb);
 			return;
@@ -434,7 +434,8 @@ void modbus_tcp_init(void) {
 /**
  * @brief Start modbus tcp
  */
-bool modbus_tcp_start(void) {
+bool modbus_tcp_start(uint16_t port) {
+	modbus_tcp.port = port;
 	return (tcpip_callbackmsg_trycallback(modbus_tcp.create_listener) == ERR_OK);
 }
 

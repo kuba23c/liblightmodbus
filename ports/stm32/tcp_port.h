@@ -11,6 +11,8 @@
 
 #include "modbus_port.h"
 
+#define MODBUS_TCP_PORT_DEFAULT 502
+
 typedef struct {
 	uint8_t clients_connected;
 	uint8_t clients_max;
@@ -35,7 +37,7 @@ typedef struct {
 } modbus_tcp_stats_t;
 
 void modbus_tcp_init(void);
-bool modbus_tcp_start(void);
+bool modbus_tcp_start(uint16_t port);
 bool modbus_tcp_stop(void);
 const modbus_tcp_stats_t* modbus_tcp_stats(void);
 const modbus_exceptions_t* modbus_tcp_get_exceptions(uint8_t client_id);
