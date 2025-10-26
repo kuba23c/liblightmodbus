@@ -19,7 +19,6 @@
 #define MODBUS_TCP_REC_MESSAGE_MIN_SIZE 8
 #define MODBUS_TCP_SEND_MESSAGE_MAX_SIZE 260
 #define MODBUS_TCP_REC_MULT 4
-#define MODBUS_TCP_MAX_CLIENTS 2
 #define MODBUS_TCP_MAX_IDLE_SEC	3
 #define MODBUS_TCP_LEN_HIGHER_BYTE	4
 #define MODBUS_TCP_LEN_LOWER_BYTE	5
@@ -467,6 +466,14 @@ const modbus_exceptions_t* modbus_tcp_get_exceptions(uint8_t client_id) {
  */
 void modbus_tcp_clear_stats(void) {
 	memset(&modbus_tcp.stats, 0, sizeof(modbus_tcp_stats_t));
+}
+
+void modbus_tcp_clear_exceptions(uint8_t client_id) {
+	if (client_id == 0 || client_id > MODBUS_TCP_MAX_CLIENTS) {
+		return;
+	} else {
+		memset((modbus_exceptions_t*) &modbus_tcp.clients[client_id - 1].modbus.exceptions, 0, sizeof(modbus_exceptions_t));
+	}
 }
 
 /**

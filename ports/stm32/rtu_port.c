@@ -42,8 +42,8 @@ typedef struct {
 } modbus_rtu_timers_t;
 
 typedef enum {
-	MODBUS_RTU_READ_READY = 0x01,
-	MODBUS_RTU_EMIT_READY = 0x02,
+	MODBUS_RTU_READ_READY = TASK_FLAG_MODBUS_RTU_READ_READY,
+	MODBUS_RTU_EMIT_READY = TASK_FLAG_MODBUS_RTU_EMIT_READY,
 } modbus_rtu_events_t;
 
 typedef enum {
@@ -96,24 +96,21 @@ static volatile uint8_t dummy_read = 0;
 static volatile uint32_t uart_isr_status = 0;
 static volatile modbus_irq_t current_irq_state = MODBUS_IRQ_ALL_OFF;
 
+#if !TASK_CUSTOM_EVENT_HANDLING
 static bool notify_wait(void) {
-	modbus_rtu.events = osThreadFlagsWait(MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY, osFlagsWaitAny, modbus_rtu.poll_timeout);
-
-	if (modbus_rtu.events == (uint32_t) osErrorTimeout) {
+	if (xTaskNotifyWait(0, MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY, &modbus_rtu.events, modbus_rtu.poll_timeout) != pdTRUE) {
 		modbus_rtu.events = 0;
 		return (true);
-	}
-	if (modbus_rtu.events == MODBUS_RTU_READ_READY || modbus_rtu.events == MODBUS_RTU_EMIT_READY
-			|| modbus_rtu.events == (MODBUS_RTU_READ_READY | MODBUS_RTU_EMIT_READY)) {
+	} else {
 		return (false);
 	}
-	modbus_rtu.events = 0;
-	return (true);
-
 }
+#endif
 
 static bool notify_from_isr(modbus_rtu_events_t event_to_set) {
-	osThreadFlagsSet(modbus_rtu.task_handle, (uint32_t) event_to_set);
+	BaseType_t yield;
+	xTaskNotifyFromISR(modbus_rtu.task_handle, (uint32_t ) event_to_set, eSetBits, &yield);
+	portYIELD_FROM_ISR(yield);
 	return (false);
 }
 
@@ -531,6 +528,10 @@ void modbus_rtu_clear_stats(void) {
 	memset((modbus_rtu_stats_t*) &modbus_rtu.stats, 0, sizeof(modbus_rtu_stats_t));
 }
 
+void modbus_rtu_clear_exceptions(void) {
+	memset((modbus_exceptions_t*) &modbus_rtu.modbus.exceptions, 0, sizeof(modbus_exceptions_t));
+}
+
 static void on_read_ready(void) {
 	modbus_rtu.modbus.err = modbusParseRequestRTU((ModbusSlave*) &(modbus_rtu.modbus.slave), modbus_rtu.slave_address, (uint8_t*) modbus_rtu.receive_buffer,
 			modbus_rtu.receive_buffer_len);
@@ -557,6 +558,7 @@ static void on_emit_ready(void) {
 	}
 }
 
+#if !TASK_CUSTOM_EVENT_HANDLING
 /**
  * @brief call this in main modbus task, it will block task
  *
@@ -583,3 +585,29 @@ bool modbus_rtu_poll(void) {
 	}
 	return (true);
 }
+#else
+/**
+ *  call this every modbus_rtu.poll_timeout
+ *
+ */
+void modbus_rtu_poll(const uint32_t *const events) {
+	if (events == NULL) {
+		modbus_rtu.stats.unknown_state++;
+		return;
+	}
+	if ((modbus_rtu.events & MODBUS_RTU_READ_READY) && (modbus_rtu.events & MODBUS_RTU_EMIT_READY)) {
+		on_read_ready();
+		on_emit_ready();
+	} else if (modbus_rtu.events & MODBUS_RTU_READ_READY) {
+		on_read_ready();
+	} else if (modbus_rtu.events & MODBUS_RTU_EMIT_READY) {
+		on_emit_ready();
+	} else {
+		if (READ_BIT(modbus_rtu.uart.uart->Instance->ISR, USART_ISR_ORE)) {
+			dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
+			SET_BIT(modbus_rtu.uart.uart->Instance->ICR, USART_ICR_ORECF);
+			__HAL_UART_ENABLE_IT(modbus_rtu.uart.uart, UART_IT_RXNE);
+		}
+	}
+}
+#endif

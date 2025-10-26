@@ -10,6 +10,7 @@
 #include "main.h"
 #include "modbus_port.h"
 #include "usart.h"
+#include "rtu_config.h"
 
 typedef enum {
 	MODBUS_0,
@@ -32,6 +33,7 @@ typedef struct {
 	uint32_t modbus_internal_errors;
 	uint32_t unknown_state;
 } modbus_rtu_stats_t;
+
 uint32_t modbus_baudrate_2_number(modbus_baudrates_t baudrate);
 modbus_baudrates_t modbus_number_2_baudrate(uint32_t number);
 void modbus_rtu_repeating_timer_callback(TIM_HandleTypeDef *htim);
@@ -42,6 +44,10 @@ bool modbus_rtu_is_active(void);
 const modbus_rtu_stats_t* modbus_rtu_get_stats(void);
 const modbus_exceptions_t* modbus_rtu_get_exceptions(void);
 void modbus_rtu_clear_stats(void);
+void modbus_rtu_clear_exceptions(void);
+#if !TASK_CUSTOM_EVENT_HANDLING
 bool modbus_rtu_poll(void);
-
+#else
+void modbus_rtu_poll(const uint32_t *const events);
+#endif
 #endif

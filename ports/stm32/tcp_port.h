@@ -10,6 +10,7 @@
 #define _TCP_PORT_H
 
 #include "modbus_port.h"
+#include "tcp_config.h"
 
 #define MODBUS_TCP_PORT_DEFAULT 502
 
@@ -42,6 +43,7 @@ bool modbus_tcp_stop(void);
 const modbus_tcp_stats_t* modbus_tcp_stats(void);
 const modbus_exceptions_t* modbus_tcp_get_exceptions(uint8_t client_id);
 void modbus_tcp_clear_stats(void);
+void modbus_tcp_clear_exceptions(uint8_t client_id);
 bool modbus_tcp_is_active(void);
 
 #endif
