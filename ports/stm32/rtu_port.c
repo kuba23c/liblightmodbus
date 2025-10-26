@@ -117,10 +117,8 @@ static bool notify_from_isr(modbus_rtu_events_t event_to_set) {
 	return (false);
 }
 
-static uint32_t modbus_baudrate_2_number(modbus_baudrates_t baudrate) {
+uint32_t modbus_baudrate_2_number(modbus_baudrates_t baudrate) {
 	switch (baudrate) {
-	case MODBUS_0:
-		return ((uint32_t) MODBUS_VALUE_0);
 	case MODBUS_1200:
 		return ((uint32_t) MODBUS_VALUE_1200);
 	case MODBUS_2400:
@@ -137,6 +135,27 @@ static uint32_t modbus_baudrate_2_number(modbus_baudrates_t baudrate) {
 		return ((uint32_t) MODBUS_VALUE_115200);
 	default:
 		return ((uint32_t) MODBUS_VALUE_115200);
+	}
+}
+
+modbus_baudrates_t modbus_number_2_baudrate(uint32_t number) {
+	switch (number) {
+	case MODBUS_VALUE_1200:
+		return (MODBUS_1200);
+	case MODBUS_VALUE_2400:
+		return (MODBUS_2400);
+	case MODBUS_VALUE_4800:
+		return (MODBUS_4800);
+	case MODBUS_VALUE_9600:
+		return (MODBUS_9600);
+	case MODBUS_VALUE_19200:
+		return (MODBUS_19200);
+	case MODBUS_VALUE_57600:
+		return (MODBUS_57600);
+	case MODBUS_VALUE_115200:
+		return (MODBUS_115200);
+	default:
+		return (MODBUS_115200);
 	}
 }
 
