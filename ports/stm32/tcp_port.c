@@ -412,6 +412,7 @@ static void modbus_tcp_delete_listener(void *ctx) {
 			modbus_tcp.stats.listeners_closed++;
 		}
 	}
+	modbus_tcp.listener_pcb = NULL;
 }
 
 /**
