@@ -450,7 +450,7 @@ bool modbus_tcp_stop(void) {
  * @brief get stats of modbus tcp
  * @return pointer to stats
  */
-const modbus_tcp_stats_t* modbus_tcp_stats(void) {
+const modbus_tcp_stats_t* MODBUS_TCP_GetStats(void) {
 	return (&modbus_tcp.stats);
 }
 

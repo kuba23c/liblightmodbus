@@ -516,7 +516,7 @@ bool modbus_rtu_is_active(void) {
 	return (modbus_rtu.is_active);
 }
 
-const modbus_rtu_stats_t* modbus_rtu_get_stats(void) {
+const modbus_rtu_stats_t* MODBUS_RTU_GetStats(void) {
 	return ((modbus_rtu_stats_t*) &modbus_rtu.stats);
 }
 

@@ -40,7 +40,7 @@ typedef struct {
 void modbus_tcp_init(void);
 bool modbus_tcp_start(uint16_t port);
 bool modbus_tcp_stop(void);
-const modbus_tcp_stats_t* modbus_tcp_stats(void);
+const modbus_tcp_stats_t* MODBUS_TCP_GetStats(void);
 const modbus_exceptions_t* modbus_tcp_get_exceptions(uint8_t client_id);
 void modbus_tcp_clear_stats(void);
 void modbus_tcp_clear_exceptions(uint8_t client_id);
