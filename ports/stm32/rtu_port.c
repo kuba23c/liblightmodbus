@@ -60,7 +60,9 @@ typedef struct {
 	uint8_t slave_address;
 	modbus_rtu_uart_t uart;
 	modbus_rtu_timers_t timers;
+#if !TASK_CUSTOM_EVENT_HANDLING
 	uint32_t events;
+#endif
 	uint32_t poll_timeout;
 	volatile modbus_rtu_states_t state;
 	volatile uint8_t receive_buffer[MODBUS_RTU_REC_MESSAGE_MAX_SIZE];
@@ -590,19 +592,16 @@ bool modbus_rtu_poll(void) {
  *  call this every modbus_rtu.poll_timeout
  *
  */
-void modbus_rtu_poll(const uint32_t *const events) {
-	if (events == NULL) {
-		modbus_rtu.stats.unknown_state++;
-		return;
-	}
-	if ((modbus_rtu.events & MODBUS_RTU_READ_READY) && (modbus_rtu.events & MODBUS_RTU_EMIT_READY)) {
+void modbus_rtu_poll(uint32_t events) {
+	if ((events & MODBUS_RTU_READ_READY) && (events & MODBUS_RTU_EMIT_READY)) {
 		on_read_ready();
 		on_emit_ready();
-	} else if (modbus_rtu.events & MODBUS_RTU_READ_READY) {
+	} else if (events & MODBUS_RTU_READ_READY) {
 		on_read_ready();
-	} else if (modbus_rtu.events & MODBUS_RTU_EMIT_READY) {
+	} else if (events & MODBUS_RTU_EMIT_READY) {
 		on_emit_ready();
 	} else {
+		modbus_rtu.stats.unknown_state++;
 		if (READ_BIT(modbus_rtu.uart.uart->Instance->ISR, USART_ISR_ORE)) {
 			dummy_read = (uint8_t) (modbus_rtu.uart.uart->Instance->RDR);
 			SET_BIT(modbus_rtu.uart.uart->Instance->ICR, USART_ICR_ORECF);

@@ -48,6 +48,6 @@ void modbus_rtu_clear_exceptions(void);
 #if !TASK_CUSTOM_EVENT_HANDLING
 bool modbus_rtu_poll(void);
 #else
-void modbus_rtu_poll(const uint32_t *const events);
+void modbus_rtu_poll(uint32_t events);
 #endif
 #endif
